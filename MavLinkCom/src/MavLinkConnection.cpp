@@ -87,6 +87,12 @@ std::string MavLinkConnection::getName()
 {
     return pImpl->getName();
 }
+
+std::shared_ptr<Port> MavLinkConnection::getPort()
+{
+    return pImpl->port;
+}
+
 int MavLinkConnection::getTargetComponentId()
 {
     return pImpl->getTargetComponentId();

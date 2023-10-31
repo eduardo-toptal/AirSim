@@ -38,6 +38,9 @@
 #include "sensors/imu/ImuBase.hpp"
 #include "sensors/magnetometer/MagnetometerBase.hpp"
 
+#include "../../MavLinkCom/src/serial_com/UdpClientPort.hpp"
+#include "../../MavLinkCom/src/serial_com/TcpClientPort.hpp"
+
 namespace msr
 {
 namespace airlib
@@ -1211,6 +1214,7 @@ namespace airlib
                 else {
                     connection->subscribe([=](std::shared_ptr<mavlinkcom::MavLinkConnection> connection_val, const mavlinkcom::MavLinkMessage& msg) {
                         unused(connection_val);
+                        addStatusMessage("QGC", connection_val, msg);
                         processQgcMessages(msg);
                     });
                 }
@@ -1316,6 +1320,7 @@ namespace airlib
             // start listening to the SITL connection.
             connection_->subscribe([=](std::shared_ptr<mavlinkcom::MavLinkConnection> connection, const mavlinkcom::MavLinkMessage& msg) {
                 unused(connection);
+                addStatusMessage("SITL", connection, msg);
                 processMavMessages(msg);
             });
 
@@ -1397,9 +1402,7 @@ namespace airlib
             }
         }
 
-        void processControlMessages(const mavlinkcom::MavLinkMessage& msg)
-        {
-            // Utils::log(Utils::stringf("Control msg %d", msg.msgid));
+        void processControlMessages(const mavlinkcom::MavLinkMessage& msg) {   
             // PX4 usually sends the following on the control channel.
             // If nothing is arriving here it means our control channel UDP connection isn't working.
             // MAVLINK_MSG_ID_HIGHRES_IMU
@@ -1429,7 +1432,8 @@ namespace airlib
             auto mavcon = mav_vehicle_->getConnection();
             if (mavcon != nullptr && mavcon != connection_) {
                 mavcon->subscribe([=](std::shared_ptr<mavlinkcom::MavLinkConnection> connection, const mavlinkcom::MavLinkMessage& msg) {
-                    unused(connection);
+                    unused(connection);                    
+                    addStatusMessage("CTRL",connection, msg);
                     processControlMessages(msg);
                 });
             }
@@ -1549,6 +1553,7 @@ namespace airlib
                         p.name = key;
                         p.value = value;
                         bool result = false;
+                        addStatusMessage(Utils::stringf("[PARAMS] %s -> %f", p.name.c_str(), p.value));
                         mav_vehicle_->setParameter(p).wait(1000, &result);
                         if (!result) {
                             Utils::log(Utils::stringf("Failed to set mavlink parameter '%s'", key.c_str()));
@@ -1606,6 +1611,107 @@ namespace airlib
             }
         }
 
+        void addStatusMessage(std::string lb,std::shared_ptr<mavlinkcom::MavLinkConnection> connection, const mavlinkcom::MavLinkMessage& msg)
+        {
+            std::string c_name = connection->getName();
+            std::shared_ptr<Port> c_port = connection->getPort();
+
+            bool is_udp = dynamic_cast<UdpClientPort*>(c_port.get()) != nullptr;
+            bool is_tcp = dynamic_cast<TcpClientPort*>(c_port.get()) != nullptr;
+
+            int v_port=0;
+            std::string v_addr = "";
+            std::string v_protcol = "";
+
+            if (is_udp) {
+                UdpClientPort* cl = dynamic_cast<UdpClientPort*>(c_port.get());
+                v_addr = cl->remoteAddress();
+                v_port = cl->remotePort();
+                v_protcol = "udp://";
+            }
+
+            if (is_tcp) {
+                TcpClientPort* cl = dynamic_cast<TcpClientPort*>(c_port.get());
+                v_addr = cl->remoteAddress();
+                v_port = cl->remotePort();
+                v_protcol = "tcp://";
+            }
+
+            std::string msg_log = logMessage(Utils::stringf("[%s] [%s@%s%s:%d]", lb.c_str(), c_name.c_str(),v_protcol.c_str(),v_addr.c_str(), v_port), msg);                            
+            if (msg_log == "") return;
+            addStatusMessage(msg_log);
+        }
+
+        static std::string logMessage(std::string lb,const mavlinkcom::MavLinkMessage& msg)
+        {
+            std::string msg_id = "";            
+            bool will_log = true;
+            mavlinkcom::MavLinkMessageIds msg_enum = (mavlinkcom::MavLinkMessageIds)msg.msgid;
+            mavlinkcom::MavLinkMessageBase* mb = nullptr;
+            switch (msg_enum) {
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_HEARTBEAT:                  msg_id = "<b>-------------- HEARTBEAT --------------</b>"; mb = new mavlinkcom::MavLinkHeartbeat(); break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_SYS_STATUS:                 msg_id = "SYS_STATUS"                ; mb = new mavlinkcom::MavLinkSysStatus()             ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_SYSTEM_TIME:                msg_id = "SYSTEM_TIME"               ; mb = new mavlinkcom::MavLinkSystemTime()            ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_PING:                       msg_id = "PING"                      ; mb = new mavlinkcom::MavLinkPing()                  ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_LINK_NODE_STATUS:           msg_id = "LINK_NODE_STATUS"          ; mb = new mavlinkcom::MavLinkLinkNodeStatus()        ;break;                
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_SET_MODE:                   msg_id = "LINK_NODE_STATUS"          ; mb = new mavlinkcom::MavLinkSetMode()               ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_PARAM_REQUEST_LIST:         msg_id = "PARAM_REQUEST_LIST"        ; mb = new mavlinkcom::MavLinkParamRequestList()      ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_PARAM_VALUE:                msg_id = "PARAM_VALUE"               ; mb = new mavlinkcom::MavLinkParamValue()            ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_GPS_RAW_INT:                msg_id = "GPS_RAW_INT"               ; mb = new mavlinkcom::MavLinkGpsRawInt()             ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_ATTITUDE:                   msg_id = "ATTITUDE"                  ; mb = new mavlinkcom::MavLinkAttitude()              ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_ATTITUDE_QUATERNION:        msg_id = "ATTITUDE_QUATERNION"       ; mb = new mavlinkcom::MavLinkAttitudeQuaternion()    ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_LOCAL_POSITION_NED:         msg_id = "LOCAL_POSITION_NED"        ; mb = new mavlinkcom::MavLinkLocalPositionNed()      ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_GLOBAL_POSITION_INT:        msg_id = "GLOBAL_POSITION_INT"       ; mb = new mavlinkcom::MavLinkGlobalPositionInt()     ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_SERVO_OUTPUT_RAW:           msg_id = "SERVO_OUTPUT_RAW"          ; mb = new mavlinkcom::MavLinkServoOutputRaw()        ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_MISSION_CURRENT:            msg_id = "MISSION_CURRENT"           ; mb = new mavlinkcom::MavLinkMissionCurrent()        ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_MISSION_REQUEST_LIST:       msg_id = "MISSION_REQUEST_LIST"      ; mb = new mavlinkcom::MavLinkMissionRequestList()    ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_MISSION_COUNT:              msg_id = "MISSION_COUNT"             ; mb = new mavlinkcom::MavLinkMissionCount()          ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_MISSION_ACK:                msg_id = "MISSION_ACK"               ; mb = new mavlinkcom::MavLinkMissionAck()            ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_GPS_GLOBAL_ORIGIN:          msg_id = "GPS_GLOBAL_ORIGIN"         ; mb = new mavlinkcom::MavLinkGpsGlobalOrigin()       ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_MISSION_REQUEST_INT:        msg_id = "MISSION_REQUEST_INT"       ; mb = new mavlinkcom::MavLinkMissionRequestInt()     ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_MANUAL_CONTROL:             msg_id = "MANUAL_CONTROL"            ; mb = new mavlinkcom::MavLinkManualControl()         ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_MISSION_ITEM_INT:           msg_id = "MISSION_ITEM_INT"          ; mb = new mavlinkcom::MavLinkMissionItemInt()        ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_VFR_HUD:                    msg_id = "VFR_HUD"                   ; mb = new mavlinkcom::MavLinkVfrHud()                ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_COMMAND_LONG:               msg_id = "COMMAND_LONG"              ; mb = new mavlinkcom::MavLinkCommandLong()           ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_COMMAND_ACK:                msg_id = "COMMAND_ACK"               ; mb = new mavlinkcom::MavLinkCommandAck()            ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_ATTITUDE_TARGET:            msg_id = "ATTITUDE_TARGET"           ; mb = new mavlinkcom::MavLinkAttitudeTarget()        ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_POSITION_TARGET_LOCAL_NED:  msg_id = "POSITION_TARGET_LOCAL_NE"  ; mb = new mavlinkcom::MavLinkPositionTargetLocalNed();break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_HIL_ACTUATOR_CONTROLS:      msg_id = "HIL_ACTUATOR_CONTROLS"     ; mb = new mavlinkcom::MavLinkHilActuatorControls()   ;will_log = true; break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_HIGHRES_IMU:                msg_id = "HIGHRES_IMU"               ; mb = new mavlinkcom::MavLinkHighresImu()            ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_TIMESYNC:                   msg_id = "TIME_SYNC"                 ; mb = new mavlinkcom::MavLinkTimesync()              ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_ACTUATOR_CONTROL_TARGET:    msg_id = "ACTUATOR_CONTROL_TARGET"   ; mb = new mavlinkcom::MavLinkActuatorControlTarget() ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_ALTITUDE:                   msg_id = "ALTITUDE"                  ; mb = new mavlinkcom::MavLinkAltitude()              ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_BATTERY_STATUS:             msg_id = "BATTERY_STATUS"            ; mb = new mavlinkcom::MavLinkBatteryStatus()         ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_AUTOPILOT_VERSION:          msg_id = "AUTOPILOT_VERSION"         ; mb = new mavlinkcom::MavLinkAutopilotVersion()      ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_VIBRATION:                  msg_id = "VIBRATION"                 ; mb = new mavlinkcom::MavLinkVibration()             ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_HOME_POSITION:              msg_id = "HOME_POSITION"             ; mb = new mavlinkcom::MavLinkHomePosition()          ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_ESTIMATOR_STATUS:           msg_id = "ESTIMATOR_STATUS"          ; mb = new mavlinkcom::MavLinkEstimatorStatus()       ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_EXTENDED_SYS_STATE:         msg_id = "EXTENDED_SYS_STATE"        ; mb = new mavlinkcom::MavLinkExtendedSysState()      ;break;
+                case mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_STATUSTEXT:                 msg_id = "STATUSTEXT"                ; mb = new mavlinkcom::MavLinkStatustext()            ;break;
+            }
+            if(!will_log) return "";
+
+            if (msg_id == "") msg_id = Utils::stringf("[%d] %s", msg.msgid, typeid(msg).name());
+
+            std::string log = msg_id;                       
+            if(mb!=nullptr) {
+                mb->decode(msg);            
+                msg_enum = (mavlinkcom::MavLinkMessageIds)msg.msgid;
+                if (msg_enum == mavlinkcom::MavLinkMessageIds::MAVLINK_MSG_ID_COMMAND_LONG) {
+                    std::string cmd_s = "";
+                    mavlinkcom::MavLinkCommandLong* m = (mavlinkcom::MavLinkCommandLong*)mb;                    
+                    switch ((mavlinkcom::MAV_CMD)m->command) {
+                        case mavlinkcom::MAV_CMD::MAV_CMD_SET_MESSAGE_INTERVAL: cmd_s = "SET_MESSAGE_INTERVAL(Message ID,Interval,Response Target[0: Flight-stack default, 1: address of requestor, 2: broadcast.])"; break;
+                        case mavlinkcom::MAV_CMD::MAV_CMD_REQUEST_MESSAGE:      cmd_s = "REQUEST_MESSAGE(Message ID,Response Target[0: Flight-stack default, 1: address of requestor, 2: broadcast.])";               break;
+                    }
+                    log += " | " + cmd_s;                    
+                }
+                log += "\n"  + mb->toJSon();
+                delete mb;
+            }
+            return Utils::stringf("%s %s", lb.c_str(), log.c_str());
+        }
+
         void handleLockStep()
         {
             received_actuator_controls_ = true;
@@ -1631,6 +1737,8 @@ namespace airlib
 
         void processMavMessages(const mavlinkcom::MavLinkMessage& msg)
         {
+            
+
             if (msg.msgid == HeartbeatMessage.msgid) {
                 std::lock_guard<std::mutex> guard_heartbeat(heartbeat_mutex_);
 

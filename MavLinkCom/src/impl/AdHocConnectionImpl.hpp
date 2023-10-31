@@ -49,13 +49,15 @@ public:
     int subscribe(AdHocMessageHandler handler);
     void unsubscribe(int id);
 
+    std::shared_ptr<Port> port;
+
 private:
     static std::shared_ptr<AdHocConnection> createConnection(const std::string& nodeName, std::shared_ptr<Port> port);
     void publishPackets();
     void readPackets();
     void drainQueue();
     std::string name;
-    std::shared_ptr<Port> port;
+    
     std::shared_ptr<AdHocConnection> con_;
     int other_system_id = -1;
     int other_component_id = 0;

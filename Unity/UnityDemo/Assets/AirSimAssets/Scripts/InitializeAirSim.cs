@@ -1,5 +1,8 @@
 ﻿using System;
 using System.IO;
+using System.Net;
+using System.Net.Sockets;
+using System.Threading;
 using AirSimUnity;
 using UnityEditor;
 using UnityEngine;
@@ -9,6 +12,27 @@ public class InitializeAirSim : MonoBehaviour
 {
     void Awake()
     {
+        /*
+        TcpListener srv = new TcpListener(IPAddress.Parse("0.0.0.0"),4560);
+
+        Debug.Log($"TCP> Created");
+
+        Thread thd = new Thread(
+        delegate () {
+
+            Debug.Log($"TCP> Waiting");
+            srv.Start();
+
+            Socket op = srv.AcceptSocket();
+
+            Debug.Log($"TCP> Connection -> {op.Connected}");
+            
+        });
+        thd.Start();
+
+        return;
+        //*/
+
         if (GetAirSimSettingsFileName() != string.Empty)
         {
 			if(AirSimSettings.Initialize())

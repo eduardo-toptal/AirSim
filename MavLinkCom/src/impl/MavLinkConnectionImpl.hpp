@@ -61,6 +61,8 @@ public:
     int prepareForSending(MavLinkMessage& msg);
     bool isPublishThread() const;
 
+    std::shared_ptr<Port> port;
+
 private:
     static std::shared_ptr<MavLinkConnection> createConnection(const std::string& nodeName, std::shared_ptr<Port> port);
     void joinLeftSubscriber(std::shared_ptr<MavLinkConnection> remote, std::shared_ptr<MavLinkConnection> con, const MavLinkMessage& msg);
@@ -69,7 +71,7 @@ private:
     void readPackets();
     void drainQueue();
     std::string name;
-    std::shared_ptr<Port> port;
+    
     std::shared_ptr<MavLinkConnection> con_;
     int other_system_id = -1;
     int other_component_id = 0;

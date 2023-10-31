@@ -97,6 +97,7 @@ public:
 
     // instance methods
     std::string getName();
+    std::shared_ptr<Port> getPort();
     int getTargetComponentId();
     int getTargetSystemId();
     bool isOpen();

@@ -659,6 +659,7 @@ void PlayLogCommand::Execute(std::shared_ptr<MavLinkVehicle> com)
     printf("### Log playback is complete.\n");
 }
 
+
 void TakeOffCommand::HandleMessage(const MavLinkMessage& msg)
 {
     if (msg.msgid == static_cast<uint8_t>(MavLinkMessageIds::MAVLINK_MSG_ID_GPS_RAW_INT)) {

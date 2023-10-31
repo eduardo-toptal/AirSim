@@ -100,7 +100,7 @@ void MultirotorPawnSimApi::updateRendering(float dt)
         }
     }
 
-    PrintLogMessage("Collision Count:", std::to_string(collision_response.collision_count_non_resting).c_str(), getVehicleName().c_str(), ErrorLogSeverity::Information);
+    //PrintLogMessage("Collision Count:", std::to_string(collision_response.collision_count_non_resting).c_str(), getVehicleName().c_str(), ErrorLogSeverity::Information);
 
     for (const auto& message : vehicle_api_messages_) {
         PrintLogMessage(message.c_str(), "30", getVehicleName().c_str(), ErrorLogSeverity::Information);
